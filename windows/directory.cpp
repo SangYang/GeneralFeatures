@@ -48,6 +48,57 @@ bool GetFileSize(const char *p_path, int *p_size) {
 	}
 }
 
+
+bool GetFileBuffer(const char *p_path, unsigned char *p_buffer, const int buffSize) {
+	FILE *pf = NULL;
+	int fileSize;
+	bool result;
+	
+	ASSERT(NULL != p_path && NULL != p_buffer);
+	pf = fopen(p_path, "rb"); 
+	if (NULL == pf) {
+		printf("fopen() error! path=%s\n", p_path);
+		result = false;
+	}
+	else {
+		GetFileSize(p_path, &fileSize);
+		if (0 == fileSize || buffSize < fileSize) {
+			printf("GetFileBuffer() error! file_size=%d, buffer_size=%d\n", fileSize, buffSize);
+			result = false;
+		}
+		else {
+			fread(p_buffer, sizeof(unsigned char), fileSize, pf);
+			result = true;
+		}
+		fclose(pf);
+	}
+	return result;
+}
+
+bool CreateFileFromBuff(const char *p_path, const unsigned char *p_buffer, const int buffSize) {
+	FILE *pf = NULL;
+	bool result;
+
+	ASSERT(NULL != p_path);
+	pf = fopen(p_path, "wb"); 
+	if (NULL == pf) {
+		printf("fopen() error! path=%s\n", p_path);
+		result = false;
+	}
+	else {
+		if (NULL == p_buffer || 0 == buffSize) {
+			// nothing
+		}
+		else {
+			fwrite(p_buffer, sizeof(unsigned char), buffSize, pf);
+		}
+		fclose(pf);
+		result = true;
+	}
+	return result;
+}
+
+
 void CheckDirectory(const char *p_path) {
 	char drive[32];
 	char dir[256];
@@ -86,30 +137,13 @@ bool CopyFile(const char *p_srcPath, const char *p_destPath) {
 		CheckDirectory(p_destPath);
 		GetFileSize(p_srcPath, &size);
 		if (0 == size) {
-			pf_dest = fopen(p_destPath, "wb");
-			if (NULL == pf_dest) {
-				printf("fopen() error! path=%s\n", p_destPath);
-				result = false;
-			}
-			else {
-				fclose(pf_dest);
-				result = true;
-			}
+			result = CreateFileFromBuff(p_destPath, NULL, 0);
 		}
 		else {
 			p_buffer = (unsigned char *)malloc(size + 1);
 			ASSERT(NULL != p_buffer);
 			fread(p_buffer, sizeof(unsigned char), size, pf_src);
-			pf_dest = fopen(p_destPath, "wb");
-			if (NULL == pf_dest) {
-				printf("fopen() error! path=%s\n", p_destPath);
-				result = false;
-			}
-			else {
-				fwrite(p_buffer, sizeof(unsigned char), size, pf_dest);
-				fclose(pf_dest);
-				result = true;
-			}
+			result = CreateFileFromBuff(p_destPath, p_buffer, size);
 			free(p_buffer);
 		}
 		fclose(pf_src);
@@ -270,7 +304,7 @@ bool WTraversalFolder(const char *p_srcDir, const char *p_destDir, const char *p
 }
 
 
-#if 0
+#if 1
 int main(void) {
 	char path[256] = "D:\\photo\\abc\\123.jpg";
 	char modPath[256];
@@ -279,7 +313,7 @@ int main(void) {
 	ModifyPath(path, modPath, sizeof(modPath));
 	//printf("%s\n", modPath);
 
-	WTraversalFolder("E:\\test", "E:\\test2\\aa\\bb\\cc", "*", "", PRINT_MODE);
+	WTraversalFolder("E:\\test", "E:\\test2\\aa\\bb\\cc", "*", "", COPY_MODE);
 
 	getchar();
 	return 0;
