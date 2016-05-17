@@ -32,7 +32,7 @@ static bool GetFileSizes(const char *p_path, long *p_size) {
 	}
 }
 
-bool ftp_upload(const char *p_local_path, const char *p_remote_path) {
+bool Curl_Upload(const char *p_local_path, const char *p_remote_path) {
 	FILE *pf_local = NULL;	
 	CURL *p_handle = NULL;
 	CURLcode res;
@@ -101,7 +101,7 @@ static size_t write_callback(void *buffer, size_t size, size_t nmemb, void *stre
 	}
 }
  
-bool ftp_download(const char *p_remote_path, const char *p_local_path) {
+bool Curl_Dwonload(const char *p_remote_path, const char *p_local_path) {
 	t_File local_file;
 	CURL *p_handle = NULL;
 	CURLcode res;
@@ -144,11 +144,12 @@ int main()
 {
 	char local_path[] = "E:\\5_Photo\\images\\11.jpg";
 	char remote_path[] = "ftp://ssyang:ssyang@192.168.1.66/__12345abcde.jpg";
-	ftp_upload(local_path, remote_path);
+	Curl_Upload(local_path, remote_path);
 
-	char local_path2[] = "E:\\abcdefg.txt";
-	char remote_path2[] = "ftp://ssyang:ssyang@192.168.1.66/123.txt";
-	ftp_download(remote_path2, local_path2);
+	char local_path2[] = "E:\\abcdefg.jpg";
+	//char remote_path2[] = "ftp://ssyang:ssyang@192.168.1.66/123.txt";
+	char remote_path2[] = "http://easyread.ph.126.net/m01ZnaivFu8yR-lVjO62vg==/7917012585080905357.jpg";
+	Curl_Dwonload(remote_path2, local_path2);
 
 	return 0;
 }
