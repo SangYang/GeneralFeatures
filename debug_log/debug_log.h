@@ -14,6 +14,7 @@ extern "C" {
 
 	bool HaveIni(void);
 	int  WriteLog(const char *p_format, ...);
+	const char* GetFileName(const char *p_path);
 
 #ifdef __cplusplus
 };
@@ -22,7 +23,7 @@ extern "C" {
 
 #if defined(_DEBUG) || defined(NDEBUG) || defined(__linux)
 #define USABLE_LOG
-#define DEFAULT_LOG 
+//#define DEFAULT_LOG 
 #endif
 
 #ifdef USABLE_LOG
@@ -30,9 +31,9 @@ extern "C" {
 	#define LOG_VALUE(e)         do { e } while(0)
 
 #if defined(DEFAULT_LOG) && defined(_WIN32) 
-	#define LOG(fmt, ...)        WriteLog("%s(%d)-<%s>\r\n\t\t"##fmt, __FILE__, __LINE__, __FUNCTION__, ##__VA_ARGS__)
+	#define LOG(fmt, ...)        WriteLog(##fmt"\t\t\t%s(%d)-<%s>", ##__VA_ARGS__, GetFileName(__FILE__), __LINE__, __FUNCTION__)
 #elif defined(DEFAULT_LOG) && defined(__linux)
-	#define LOG(fmt, ...)        WriteLog("%s(%d)-<%s>\r\n\t\t"fmt, __FILE__, __LINE__, __FUNCTION__, ##__VA_ARGS__)
+	#define LOG(fmt, ...)        WriteLog(fmt"\t\t\t%s(%d)-<%s>", ##__VA_ARGS__, GetFileName(__FILE__), __LINE__, __FUNCTION__)
 #else
 	#define LOG                  WriteLog
 #endif // DEFAULT_LOG
@@ -45,3 +46,4 @@ extern "C" {
 
 
 #endif // DEBUG_LOG_H
+

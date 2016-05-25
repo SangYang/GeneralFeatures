@@ -1,3 +1,4 @@
+#include "stdafx.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -54,15 +55,17 @@ static bool CheckJPGFormat(const unsigned char *buffer, int size) {
 		}
 	}
 
-	find_tail = (unsigned char*)memchr(find_head+1, 0xFF, size-pos_head-1);
-	while (find_tail) {
-		if (0xD9 == *(find_tail+1)) {
-			is_tail = true;
-			break;
-		}
-		else {
-			pos_tail = find_tail - buffer;
-			find_tail = (unsigned char*)memchr(find_tail+1, 0xFF, size-pos_tail-1);
+	if (true == is_head) {
+		find_tail = (unsigned char*)memchr(find_head+1, 0xFF, size-pos_head-1);
+		while (find_tail) {
+			if (0xD9 == *(find_tail+1)) {
+				is_tail = true;
+				break;
+			}
+			else {
+				pos_tail = find_tail - buffer;
+				find_tail = (unsigned char*)memchr(find_tail+1, 0xFF, size-pos_tail-1);
+			}
 		}
 	}
 
@@ -92,7 +95,7 @@ bool IsRightJPG(const char *file_name) {
 	buffer[size] = '\0';
 	fread(buffer, sizeof(unsigned char), size, file);
 	is_right_format = CheckJPGFormat(buffer, size);
-	is_right_measure = CheckJPGMeasure(buffer, size);
+	is_right_measure = true;//CheckJPGMeasure(buffer, size);
 	free(buffer);
 	fclose(file);
 	file = NULL;

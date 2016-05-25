@@ -8,14 +8,14 @@
 #define PRINT_MODE    104
 
 
-void ModifyPath(const char *p_path, char *p_modPath, const int modSize);
+void ModifyMysqlPath(const char *p_path, char *p_modPath, const int modSize);
 bool GetFileSize(const char *p_path, int *p_size);
 bool GetFileBuffer(const char *p_path, unsigned char *p_buffer, const int buffSize);
 bool CreateFileFromBuff(const char *p_path, const unsigned char *p_buffer, const int buffSize);
+void ModifyHttpPath(const char *p_inpath, char *p_outpath, const int outsize);
 void CheckDirectory(const char *p_path);
 bool CopyFile(const char *p_srcPath, const char *p_destPath);
-bool TraversalFolder(const char *p_srcDir, const char *p_destDir, const char *p_srcName, char *p_destName, const int mode);
-bool WTraversalFolder(const char *p_srcDir, const char *p_destDir, const char *p_srcName, char *p_destName, const int mode);
+bool TraversalFolder2222(const char *p_srcDir, const char *p_destDir, const char *p_srcName, char *p_destName, const int mode);
 
 
 #endif // SSY_DIRECTORY_H

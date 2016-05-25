@@ -1,3 +1,4 @@
+#include "stdafx.h"
 #include "debug_log.h"
 #include <stdarg.h>
 #include <stdio.h>
@@ -21,6 +22,21 @@ bool HaveIni() {
 		return true;
 	}
 }
+
+const char* GetFileName(const char *p_path) {
+	const char *p_find = NULL;
+
+#ifdef _WIN32
+	p_find = strrchr(p_path, '\\');
+#else
+	p_find = strrchr(p_path, '/');
+#endif // _WIN32
+	if (NULL == p_find)
+		return p_path;
+	else
+		return p_find + 1;
+}
+
 
 static bool GetCurrentTimes(char *p_current_time, const int time_size) {
 	const int c_TimeSizeMin = sizeof("20151122101033");
@@ -49,7 +65,6 @@ int WriteLog(const char *p_format, ...) {
 	char current_time[32];
 	va_list arg_ptr;
 	int writed_byte;
-	int error_code;
 
 	have_ini = HaveIni();
 	if (false == have_ini)

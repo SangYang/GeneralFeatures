@@ -1,3 +1,4 @@
+#include "stdafx.h"
 #include "directory.h"
 #include <io.h>
 #include <locale.h>
@@ -5,12 +6,10 @@
 #include <stdlib.h>
 #include <string.h>
 #include <wchar.h>
-#include <Windows.h>
-#include "transcode.h"
 
 #define ASSERT(b)  NULL
 
-void ModifyPath(const char *p_path, char *p_modPath, const int modSize) {
+void ModifyMysqlPath(const char *p_path, char *p_modPath, const int modSize) {
 	char *p_tok = NULL;
 	char tok[256] = {0};
 
@@ -99,6 +98,20 @@ bool CreateFileFromBuff(const char *p_path, const unsigned char *p_buffer, const
 }
 
 
+void ModifyHttpPath(const char *p_inpath, char *p_outpath, const int outsize) {
+	char *p_find = NULL;
+
+	ASSERT(NULL != p_inpath && NULL != p_outpath);
+	ASSERT(strlen(p_inpath) < outsize);
+	strcpy(p_outpath, p_inpath);
+	p_find = strchr(p_outpath, '/');
+	while (NULL != p_find) {
+		*p_find = '\\';
+		p_find = strchr(p_outpath, '/');
+	}
+}
+
+
 void CheckDirectory(const char *p_path) {
 	char drive[32];
 	char dir[256];
@@ -152,7 +165,8 @@ bool CopyFile(const char *p_srcPath, const char *p_destPath) {
 	return result;
 }
 
-bool TraversalFolder(const char *p_srcDir, const char *p_destDir, const char *p_srcName, char *p_destName, const int mode) {
+
+bool TraversalFolder2222(const char *p_srcDir, const char *p_destDir, const char *p_srcName, char *p_destName, const int mode) {
 	struct _finddata_t fileinfo;
 	char srcPath[256];
 	char destPath[256];
@@ -219,92 +233,8 @@ bool TraversalFolder(const char *p_srcDir, const char *p_destDir, const char *p_
 	}
 }
 
-bool WTraversalFolder(const char *p_srcDir, const char *p_destDir, const char *p_srcName, char *p_destName, const int mode) {
-	struct _wfinddata_t fileinfo;
-	char srcPath[256];
-	char destPath[256];
-	char destName[256];
-	wchar_t wdestName[256];
-	wchar_t wsrcPath[256];
-	wchar_t wdestPath[256];
-	long first_ret;
-	int next_ret;
-	int file_index;
 
-	ASSERT(NULL != p_srcDir);
-	strcpy(srcPath, p_srcDir);
-	strcat(srcPath, "\\");
-	strcat(srcPath, p_srcName);
-	ChToWch(srcPath, wsrcPath, sizeof(wsrcPath));
-	first_ret = _wfindfirst(wsrcPath, &fileinfo);
-	if (-1L == first_ret) {
-		printf("_wfindfirst() error! path=%s\n", srcPath);
-		return false;
-	}
-	else {
-		file_index = 0;
-		next_ret = _wfindnext(first_ret, &fileinfo);
-		while (-1 != next_ret) {
-			switch (mode) {
-				case PRINT_MODE:
-					printf("index=%d, name=%ls\n", file_index, fileinfo.name);
-					break;
-				case REMOVE_MODE:
-					ChToWch(p_srcDir, wsrcPath, sizeof(wsrcPath));
-					wcscat(wsrcPath, L"\\");
-					wcscat(wsrcPath, fileinfo.name);
-					//WchToCh(wsrcPath, srcPath, sizeof(srcPath));
-
-					if (_A_SUBDIR == fileinfo.attrib) // 文件夹
-						RemoveDirectoryW(wsrcPath);
-					else
-						_wremove(wsrcPath);
-					break;
-				case RENAME_MODE:
-					if (_A_SUBDIR == fileinfo.attrib) {// 文件夹
-						//nothing
-					}
-					else {
-						ChToWch(p_srcDir, wsrcPath, sizeof(wsrcPath));
-						wcscat(wsrcPath, L"\\");
-						wcscat(wsrcPath, fileinfo.name);
-
-						ChToWch(p_srcDir, wdestPath, sizeof(wdestPath));
-						wcscat(wdestPath, L"\\");
-						swprintf(wdestName, L"%ls_%d", fileinfo.name, file_index);
-						wcscat(wdestPath, wdestName);
-
-						_wrename(wsrcPath, wdestPath);
-					}				
-					break;
-				case COPY_MODE:
-					if (_A_SUBDIR == fileinfo.attrib) {// 文件夹
-						//nothing
-					}
-					else {
-						ChToWch(p_srcDir, wsrcPath, sizeof(wsrcPath));
-						wcscat(wsrcPath, L"\\");
-						wcscat(wsrcPath, fileinfo.name);
-						WchToCh(wsrcPath, srcPath, sizeof(srcPath));
-
-						sprintf(destName, "%ls_%d", fileinfo.name, file_index);
-						sprintf(destPath, "%s\\%s", p_destDir, destName);
-						CopyFile(srcPath, destPath);
-					}
-					break;
-				default:
-					break;
-			}
-			next_ret = _wfindnext(first_ret, &fileinfo);
-			file_index++;
-		}
-		_findclose(first_ret);
-		return true;
-	}
-}
-
-
-#if 1
+#if 0
 int main(void) {
 	char path[256] = "D:\\photo\\abc\\123.jpg";
 	char modPath[256];
@@ -313,7 +243,7 @@ int main(void) {
 	ModifyPath(path, modPath, sizeof(modPath));
 	//printf("%s\n", modPath);
 
-	WTraversalFolder("E:\\test", "E:\\test2\\aa\\bb\\cc", "*", "", COPY_MODE);
+	TraversalFolder("E:\\test", "E:\\test2\\aa\\bb\\cc", "*", "", COPY_MODE);
 
 	getchar();
 	return 0;

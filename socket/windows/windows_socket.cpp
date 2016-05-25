@@ -1,7 +1,7 @@
+#include "stdafx.h"
 #include "windows_socket.h"
 #include <stdio.h>  
 #include <time.h>
-#include "debug_assert.h"
 #include "debug_log.h"
 
 #pragma comment(lib, "ws2_32.lib")  
@@ -54,14 +54,15 @@ bool InitSocket(SOCKET *p_handle) {
 
 static bool SetSocketTimeout(const SOCKET handle, const time_t seconds) {
 	int set_ret;
+	int mseconds = seconds * 1000;
 
-	set_ret = setsockopt(handle, SOL_SOCKET, SO_SNDTIMEO, (const char*)&seconds, sizeof(seconds));   
+	set_ret = setsockopt(handle, SOL_SOCKET, SO_SNDTIMEO, (const char*)&mseconds, sizeof(mseconds));   
 	if (-1 == set_ret) {
 		printf("setsockopt() SendTimeOut failure! [%d] %s\n", errno, strerror(errno));
 		return false;
 	}
 	else {
-		set_ret = setsockopt(handle, SOL_SOCKET, SO_RCVTIMEO, (const char*)&seconds, sizeof(seconds));
+		set_ret = setsockopt(handle, SOL_SOCKET, SO_RCVTIMEO, (const char*)&mseconds, sizeof(mseconds));
 		if (-1 == set_ret) {
 			printf("setsockopt() RecvTimeOut failure! [%d] %s\n", errno, strerror(errno));
 			return false;
@@ -108,7 +109,7 @@ bool WaitConnectSocket(const SOCKET listen_handle, SOCKET *p_accept_handle) {
 		return false;
 	}
 	else {
-		ok_set = SetSocketTimeout(accept_handle, 10); // ≥¨ ± 10 √Î
+		ok_set = SetSocketTimeout(accept_handle, 60); // ≥¨ ± 60 √Î
 		if (false == ok_set) {
 			printf("SetSocketTimeout() error!\n");
 			return false;			
@@ -126,7 +127,7 @@ bool ConnectSocket(const char *p_ip, const int port, const SOCKET client_handle)
 	bool ok_set;
 
 	ASSERT(NULL != p_ip);	
-	ok_set = SetSocketTimeout(client_handle, 10); // ≥¨ ± 10 √Î
+	ok_set = SetSocketTimeout(client_handle, 60); // ≥¨ ± 60 √Î
 	if (false == ok_set) {
 		printf("SetSocketTimeout() error!\n");
 		return false;			
