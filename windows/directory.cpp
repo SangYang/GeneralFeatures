@@ -166,6 +166,39 @@ bool CopyFile(const char *p_srcPath, const char *p_destPath) {
 }
 
 
+bool RemoveFiles(const char *p_srcDir, const char *p_srcName) {
+	struct _finddata_t fileinfo;
+	char srcPath[256];
+	long first_ret;
+	int next_ret;
+	int file_index;
+
+	ASSERT(NULL != p_srcDir);
+	strcpy(srcPath, p_srcDir);
+	strcat(srcPath, "\\");
+	strcat(srcPath, p_srcName);
+	first_ret = _findfirst(srcPath, &fileinfo);
+	if (-1L == first_ret) {
+		printf("_findfirst() error! path=%s\n", srcPath);
+		return false;
+	}
+	else {
+		file_index = 0;
+		next_ret = _findnext(first_ret, &fileinfo);
+		while (-1 != next_ret) {
+			sprintf(srcPath, "%s\\%s", p_srcDir, fileinfo.name);
+			printf(">>>%s\n", srcPath);
+			if (_A_SUBDIR != fileinfo.attrib) // ÎÄ¼þ¼Ð
+				remove(srcPath);
+			next_ret = _findnext(first_ret, &fileinfo);
+			file_index++;
+		}
+		_findclose(first_ret);
+		return true;
+	}
+}
+
+
 bool TraversalFolder2222(const char *p_srcDir, const char *p_destDir, const char *p_srcName, char *p_destName, const int mode) {
 	struct _finddata_t fileinfo;
 	char srcPath[256];
