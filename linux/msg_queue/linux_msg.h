@@ -12,11 +12,13 @@
 extern "C" {
 #endif
 
-	bool CreateMsgQueue(int *p_queue_id);
+	bool CreateMsgQueue(const char *p_path, const int msgnmb_max, int *p_queue_id);
 	bool DeleteMsgQueue(const int queue_id);
-	int PushMsgQueue(const int queue_id, void *p_buff, const int buff_size);
-	int PopMsgQueue(const int queue_id, void *p_buff, const int buff_size);
+	bool GetMsgQueue(const char *p_path, int *p_queue_id);
+	int  PushMsgQueue(const int queue_id, void *p_buff, const int buff_size);
+	int  PopMsgQueue(const int queue_id, void *p_buff, const int buff_size);
 	bool ShowMsgQueue(const int queue_id);
+	int GetMsgNumInQueue(const int queue_id);
 
 #ifdef __plusplus
 }

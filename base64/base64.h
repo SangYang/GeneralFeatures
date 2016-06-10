@@ -5,8 +5,8 @@
 extern "C" {  
 #endif  
   
-int Base64Encode(const char *source, int source_size, char *base64, int base64_size);
-int Base64Decode(const char *base64, int base64_size, char *source, int source_size);
+int Base64Encode(const unsigned char *source, int source_size, char *base64, int *base64_size);
+int Base64Decode(const char *base64, int base64_size, unsigned char *source, int *source_size);
 
 #ifdef __cplusplus  
 }  

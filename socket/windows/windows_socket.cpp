@@ -26,6 +26,7 @@ bool InitSocket(SOCKET *p_handle) {
  	WORD version;  
 	WSADATA wsa_data;  
 	int wsa_ret; 
+	//ULONG noBlock = 1;
 
 	ASSERT(NULL != p_handle);
 	version = MAKEWORD(2, 2);  
@@ -46,31 +47,32 @@ bool InitSocket(SOCKET *p_handle) {
 			return false;
 		}
 		else {
+			//ioctlsocket(handle, FIONBIO, &noBlock); //设置成非阻塞模式。
 			*p_handle = handle;
 			return true;
 		}
 	}
 }
 
-static bool SetSocketTimeout(const SOCKET handle, const time_t seconds) {
+static bool SetSocketTimeout(const SOCKET handle, const time_t mseconds) {
 	int set_ret;
-	int mseconds = seconds * 1000;
 
-	set_ret = setsockopt(handle, SOL_SOCKET, SO_SNDTIMEO, (const char*)&mseconds, sizeof(mseconds));   
+	set_ret = setsockopt(handle, SOL_SOCKET, SO_KEEPALIVE, (const char*)&mseconds, sizeof(mseconds));
 	if (-1 == set_ret) {
-		printf("setsockopt() SendTimeOut failure! [%d] %s\n", errno, strerror(errno));
+		printf("setsockopt() SO_KEEPALIVE failure! [%d] %s\n", errno, strerror(errno));
 		return false;
 	}
-	else {
-		set_ret = setsockopt(handle, SOL_SOCKET, SO_RCVTIMEO, (const char*)&mseconds, sizeof(mseconds));
-		if (-1 == set_ret) {
-			printf("setsockopt() RecvTimeOut failure! [%d] %s\n", errno, strerror(errno));
-			return false;
-		}
-		else {
-			return true;
-		}
+	set_ret = setsockopt(handle, SOL_SOCKET, SO_SNDTIMEO, (const char*)&mseconds, sizeof(mseconds));   
+	if (-1 == set_ret) {
+		printf("setsockopt() SO_SNDTIMEO failure! [%d] %s\n", errno, strerror(errno));
+		return false;
 	}
+	set_ret = setsockopt(handle, SOL_SOCKET, SO_RCVTIMEO, (const char*)&mseconds, sizeof(mseconds));
+	if (-1 == set_ret) {
+		printf("setsockopt() SO_RCVTIMEO failure! [%d] %s\n", errno, strerror(errno));
+		return false;
+	}
+	return true;
 }
 
 
@@ -109,9 +111,10 @@ bool WaitConnectSocket(const SOCKET listen_handle, SOCKET *p_accept_handle) {
 		return false;
 	}
 	else {
-		ok_set = SetSocketTimeout(accept_handle, 60); // 超时 60 秒
+		ok_set = true;//SetSocketTimeout(accept_handle, 60 * 60 * 24 * 30); 
 		if (false == ok_set) {
 			printf("SetSocketTimeout() error!\n");
+			closesocket(accept_handle); 
 			return false;			
 		}
 		else {
@@ -127,7 +130,7 @@ bool ConnectSocket(const char *p_ip, const int port, const SOCKET client_handle)
 	bool ok_set;
 
 	ASSERT(NULL != p_ip);	
-	ok_set = SetSocketTimeout(client_handle, 60); // 超时 60 秒
+	ok_set = true;//SetSocketTimeout(client_handle, 500);
 	if (false == ok_set) {
 		printf("SetSocketTimeout() error!\n");
 		return false;			
@@ -139,10 +142,11 @@ bool ConnectSocket(const char *p_ip, const int port, const SOCKET client_handle)
 		sock_ret = connect(client_handle, (SOCKADDR *)&socket_addr, sizeof(socket_addr));  
 		if (SOCKET_ERROR == sock_ret) {
 			LOG("connect() error = %d", WSAGetLastError());
+/*
 			if (WSAEISCONN == WSAGetLastError()) {  // socket 已经建立连接
 				return true;
 			}
-			else
+			else*/
 				return false;
 		}
 		else {
@@ -154,6 +158,7 @@ bool ConnectSocket(const char *p_ip, const int port, const SOCKET client_handle)
 int SendSocket(const SOCKET handle, const void *pv_data, const int size) {
 	const int c_PerSize = 256;
 	char *p_data;
+	int per_size;
 	int persend_size;
 	int allsend_size;
 	int remain_size;
@@ -164,10 +169,11 @@ int SendSocket(const SOCKET handle, const void *pv_data, const int size) {
 	while (allsend_size < size) {
 		remain_size = size - allsend_size;
 		if (c_PerSize > remain_size)
-			persend_size = send(handle, p_data + allsend_size, remain_size, 0);		
+			per_size = remain_size;
 		else 
-			persend_size = send(handle, p_data + allsend_size, c_PerSize, 0);
-		if (SOCKET_ERROR == persend_size) {
+			per_size = c_PerSize;
+		persend_size = send(handle, p_data + allsend_size, per_size, 0);
+		if (per_size != persend_size) {
 			LOG("send() error = %d", persend_size);
 			break;
 		}
@@ -181,6 +187,7 @@ int SendSocket(const SOCKET handle, const void *pv_data, const int size) {
 int RecvSocket(const SOCKET handle, void *pv_data, const int size) {
 	const int c_PerSize = 256;
 	char *p_data;
+	int per_size;
 	int perrecv_size;
 	int allrecv_size;
 	int remain_size;
@@ -191,11 +198,12 @@ int RecvSocket(const SOCKET handle, void *pv_data, const int size) {
 	while (allrecv_size < size) {
 		remain_size = size - allrecv_size;
 		if (c_PerSize > remain_size)
-			perrecv_size = recv(handle, p_data + allrecv_size, remain_size, 0);		
+			per_size = remain_size;	
 		else 
-			perrecv_size = recv(handle, p_data + allrecv_size, c_PerSize, 0);
-		if (SOCKET_ERROR == perrecv_size) {
-			LOG("recv() error = %d", perrecv_size);
+			per_size = c_PerSize;
+		perrecv_size = recv(handle, p_data + allrecv_size, per_size, 0);
+		if (per_size != perrecv_size) {
+			//LOG("recv() error = %d", perrecv_size);
 			break;
 		}
 		else
