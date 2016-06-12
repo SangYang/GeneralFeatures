@@ -9,9 +9,9 @@
 
 #pragma comment(lib, "libmysql")
 
-
 bool Mysql_Init(const char *p_host, const int port, const char *p_user, const char *p_passwd, MYSQL **pp_handle) {
 	MYSQL *p_handle = NULL;
+	MYSQL *p_conn_handle = NULL;
 
 	ASSERT(NULL != p_host && NULL != p_user && NULL != p_passwd && NULL != pp_handle);
 	p_handle = mysql_init(NULL);
@@ -20,17 +20,19 @@ bool Mysql_Init(const char *p_host, const int port, const char *p_user, const ch
 		return false;
 	}
 	else {
-		p_handle = mysql_real_connect(p_handle, p_host, p_user, p_passwd, NULL, port, NULL, 0);
-		if (NULL == p_handle) {
-			printf("mysql_real_connect() error=%d,%s\n", mysql_errno(p_handle), mysql_error(p_handle));
-			return false;
-		}
-		else {
-			*pp_handle = p_handle;
-			return true;			
-		}
+		p_handle->reconnect = 1;
+		do {
+			p_conn_handle = mysql_real_connect(p_handle, p_host, p_user, p_passwd, NULL, port, NULL, 0);	
+			LOG("mysql_real_connect() conn_handle=%p, result=%d,%s\n", p_conn_handle, mysql_errno(p_conn_handle), mysql_error(p_conn_handle));
+			usleep(1000 * 1000 * 1);
+		} 
+		while (NULL == p_conn_handle);
+
+		*pp_handle = p_handle;
+		return true;			
 	}
 }
+
 
 void Mysql_Uninit(const MYSQL *pc_handle) {
 	MYSQL *p_handle = (MYSQL *)pc_handle;
