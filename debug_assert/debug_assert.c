@@ -6,7 +6,16 @@
 #include <crtdbg.h>
 #endif // _WIN32
 
+#ifdef LOG
 #include "debug_log.h"
+#else
+#define LOG    printf
+#ifndef __cplusplus
+#define bool   int
+#define false  0
+#define true   1
+#endif
+#endif
 
 #ifdef _WIN32
 static _CrtMemState g_state_begin = {0};
