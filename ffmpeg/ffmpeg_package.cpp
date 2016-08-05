@@ -1,6 +1,7 @@
 #if 1
 #include "ffmpeg_package.h"
 #include <errno.h>
+#include <math.h>
 #include <stdio.h>  
 #include "common_log.h"
 #include "debug_assert.h"
@@ -59,7 +60,7 @@ static int save_YUV420P(const AVFrame *frame, int width, int height, unsigned ch
 		return -1;
 }
 
-int JPG_to_Pixel(const unsigned char *jpgBuff, int jpgSize, int pixelFmt, unsigned char *pixelBuff, int *pixelSize, int *pixelWidth, int *pixelHeight) {	
+int JPG_to_Pixel(const unsigned char *jpgBuff, int jpgSize, int pixelFmt, int pixelWidth, int pixelHeight, unsigned char *pixelBuff, int *pixelSize) {	
 	AVFormatContext *formatContext;
 	AVInputFormat *inputFormat;
 	AVIOContext *ioContext;
@@ -93,28 +94,30 @@ int JPG_to_Pixel(const unsigned char *jpgBuff, int jpgSize, int pixelFmt, unsign
 			codec = avcodec_find_decoder(codecContext->codec_id);
 			avcodec_open2(codecContext, codec, NULL);
 			frame = avcodec_alloc_frame();
-			gotFrame = 0;
 			codecRet = avcodec_decode_video2(codecContext, frame, &gotFrame, &packet);
 			if (0 <= codecRet && 1 == gotFrame) {
-				frame2 = avcodec_alloc_frame();
-				memcpy(frame2, frame, sizeof(AVFrame));
+				frame2 = av_frame_clone(frame);
 				frame2->format = PF(pixelFmt);
-				swsContext = sws_getContext(codecContext->width, codecContext->height, codecContext->pix_fmt, codecContext->width, codecContext->height, (AVPixelFormat)frame2->format, SWS_BICUBIC, NULL, NULL, NULL);   
+				swsContext = sws_getContext(codecContext->width, codecContext->height, codecContext->pix_fmt, pixelWidth, pixelHeight, (AVPixelFormat)frame2->format, SWS_BICUBIC, NULL, NULL, NULL);   
 				sws_scale(swsContext, (const uint8_t *const *)frame->data, frame->linesize, 0, codecContext->height, frame2->data, frame2->linesize);  
 				sws_freeContext(swsContext);
 
-				*pixelWidth = codecContext->width;
-				*pixelHeight = codecContext->height;
-				result = save_YUV420P(frame2, codecContext->width, codecContext->height, pixelBuff, pixelSize);
+				*pixelSize = avpicture_layout((const AVPicture *)frame2, (enum AVPixelFormat)frame2->format, pixelWidth, pixelHeight, pixelBuff, *pixelSize);
+				result = *pixelSize;
 
-				av_free(frame2);
+				av_frame_free(&frame2);
 			}	
-			av_free(frame);
+			if (1 == codecContext->refcounted_frames) av_frame_unref(frame); 
+			avcodec_free_frame(&frame);
 			avcodec_close(codecContext);
-			break;
 		}
+		av_free_packet(&packet);
+		if (-1 != result)
+			break;
 	}
 
+	avformat_close_input(&formatContext);
+	av_free(ioContext->buffer);
 	av_free(ioContext);
 	avformat_free_context(formatContext);
 	return result;
@@ -129,7 +132,6 @@ int Pixel_to_JPG(const unsigned char *pixelBuff, int pixelSize, int pixelFmt, in
 	AVCodec *codec;
 	AVFrame *frame;
 	AVPacket packet;
-	uint8_t *ioBuff;
 	int ioRet;
 	int codecRet;
 	int gotPacket;
@@ -139,7 +141,7 @@ int Pixel_to_JPG(const unsigned char *pixelBuff, int pixelSize, int pixelFmt, in
 	av_register_all();
 	formatContext = avformat_alloc_context();
 	outputFormat = av_guess_format("mjpeg", NULL, NULL);
-	avio_open_dyn_buf(&ioContext);
+	ioContext = avio_alloc_context(jpgBuff, *jpgSize, 0, NULL, NULL, NULL, NULL);
 	formatContext->oformat = outputFormat;
 	formatContext->pb = ioContext;
 	stream = av_new_stream(formatContext, 0);
@@ -160,30 +162,20 @@ int Pixel_to_JPG(const unsigned char *pixelBuff, int pixelSize, int pixelFmt, in
 		av_new_packet(&packet, pixelSizeMin);
 		frame = avcodec_alloc_frame();
 		avpicture_fill((AVPicture *)frame, pixelBuff, codecContext->pix_fmt, codecContext->width, codecContext->height);
-		gotPacket = 0;
 		codecRet = avcodec_encode_video2(codecContext, &packet, frame, &gotPacket);
 		if (0 <= codecRet && 1 == gotPacket) {
 			av_write_frame(formatContext, &packet);
 			if (packet.size <= *jpgSize) {
-				ioBuff = (uint8_t *)av_malloc(packet.size);
-				avio_close_dyn_buf(ioContext, &ioBuff);
-				formatContext->pb = NULL;
-				memcpy(jpgBuff, ioBuff, packet.size);
-				av_free(ioBuff);
 				*jpgSize = packet.size;
-				result = 0;
+				result = *jpgSize;
 			}
 		}
-		av_free(frame);
+		avcodec_free_frame(&frame);
 		av_free_packet(&packet);
-	}
-	if (NULL != formatContext->pb) {
-		ioBuff = (uint8_t *)av_malloc(1024);
-		avio_close_dyn_buf(ioContext, &ioBuff);
-		av_free(ioBuff);
 	}
 	av_write_trailer(formatContext);
 
+	av_free(ioContext);
 	avcodec_close(codecContext);
 	avformat_free_context(formatContext);
 	return result;
@@ -211,14 +203,188 @@ int Pixel_to_Pixel(const unsigned char *inPixBuff, int inPixSize, int inPixFmt, 
 	return result;
 }
 
+int BGR24_to_BMP(const unsigned char *bgr24Buff, int bgr24Size, int bgr24Width, int bgr24Height, unsigned char *bmpBuff, int *bmpSize) {
+	typedef struct { 
+		unsigned long  bfSize; 
+		unsigned short bfReserved1; 
+		unsigned short bfReserved2; 
+		unsigned long  bfOffBits; 
+	} BMPFILEHEADER; 
+	typedef struct {
+		unsigned long  biSize; 
+		long           biWidth; 
+		long           biHeight; 
+		unsigned short biPlanes; 
+		unsigned short biBitCount; 
+		unsigned long  biCompression; 
+		unsigned long  biSizeImage; 
+		long           biXPelsPerMeter; 
+		long           biYPelsPerMeter; 
+		unsigned long  biClrUsed; 
+		unsigned long  biClrImportant; 
+	} BMPINFOHEADER; 
+	BMPFILEHEADER bmpFileHeader;
+	BMPINFOHEADER bmpInfoHeader;
+	char bfType[2] = {'B', 'M'}; 
+	int bgr24SizeMin = bgr24Width*bgr24Height*3;
+	int bmpSizeMin = bgr24SizeMin+sizeof(bfType)+sizeof(BMPFILEHEADER)+sizeof(BMPINFOHEADER);
+	int result = -1;
+
+	if (bgr24SizeMin <= bgr24Size && bmpSizeMin <= *bmpSize) {
+		bmpFileHeader.bfSize = bmpSizeMin;
+		bmpFileHeader.bfReserved1 = 0;
+		bmpFileHeader.bfReserved2 = 0;
+		bmpFileHeader.bfOffBits = sizeof(bfType) + sizeof(BMPFILEHEADER) + sizeof(BMPINFOHEADER);
+
+		memset(&bmpInfoHeader, 0, sizeof(BMPINFOHEADER));
+		bmpInfoHeader.biSize = sizeof(BMPINFOHEADER);
+		bmpInfoHeader.biWidth = bgr24Width;
+		bmpInfoHeader.biHeight = -bgr24Height;
+		bmpInfoHeader.biPlanes = 1;
+		bmpInfoHeader.biBitCount = 24;
+		bmpInfoHeader.biCompression = 0L;
+		bmpInfoHeader.biSizeImage = bgr24SizeMin;
+
+		memcpy(bmpBuff, bfType, sizeof(bfType));
+		memcpy(bmpBuff+sizeof(bfType), &bmpFileHeader, sizeof(BMPFILEHEADER));
+		memcpy(bmpBuff+sizeof(bfType)+sizeof(BMPFILEHEADER), &bmpInfoHeader, sizeof(BMPINFOHEADER));	
+		memcpy(bmpBuff+sizeof(bfType)+sizeof(BMPFILEHEADER)+sizeof(BMPINFOHEADER), bgr24Buff, bgr24SizeMin);
+		*bmpSize = bmpSizeMin;
+		result = 0;
+	}
+	return result;
+}
+
+int BMP_to_BGR24(const unsigned char *bmpBuff, int bmpSize, int *bgr24Width, int *bgr24Height, unsigned char *bgr24Buff, int *bgr24Size) {
+	typedef struct {
+		unsigned char rgbBlue;
+		unsigned char rgbGreen;
+		unsigned char rgbRed;
+		unsigned char rgbReserved;
+	} RGBQUA;	
+	typedef struct { 
+		unsigned long  bfSize; 
+		unsigned short bfReserved1; 
+		unsigned short bfReserved2; 
+		unsigned long  bfOffBits; 
+	} BMPFILEHEADER; 
+	typedef struct {
+		unsigned long  biSize; 
+		long           biWidth; 
+		long           biHeight; 
+		unsigned short biPlanes; 
+		unsigned short biBitCount; 
+		unsigned long  biCompression; 
+		unsigned long  biSizeImage; 
+		long           biXPelsPerMeter; 
+		long           biYPelsPerMeter; 
+		unsigned long  biClrUsed; 
+		unsigned long  biClrImportant; 
+	} BMPINFOHEADER; 
+	BMPFILEHEADER bmpFileHeader;
+	BMPINFOHEADER bmpInfoHeader;
+	RGBQUA *rgbQuad;
+	const unsigned char *bmpData;
+	unsigned char *bmpData2;
+	unsigned char bmpMask;
+	unsigned char rgbIdx;
+	char bfType[2]; 
+	const int c_bfOffBits = sizeof(bfType)+sizeof(BMPFILEHEADER)+sizeof(BMPINFOHEADER);
+	int bgr24SizeMin;
+	int width, height;
+	int bmpIdx, wIdx, hIdx, bitIdx;
+	int paletteSize;
+	int result = -1;
+
+	if (c_bfOffBits <= bmpSize) {
+		memcpy(bfType, bmpBuff, sizeof(bfType));
+		memcpy(&bmpFileHeader, bmpBuff+sizeof(bfType), sizeof(BMPFILEHEADER));
+		memcpy(&bmpInfoHeader, bmpBuff+sizeof(bfType)+sizeof(BMPFILEHEADER), sizeof(BMPINFOHEADER));
+		if ('B' == bfType[0] && 'M' == bfType[1] && 0L == bmpInfoHeader.biCompression && bmpFileHeader.bfSize <= bmpSize) {
+			if (0 == (bmpInfoHeader.biWidth*bmpInfoHeader.biBitCount/8)%4)
+				width = bmpInfoHeader.biWidth;
+			else
+				width = (bmpInfoHeader.biWidth*bmpInfoHeader.biBitCount+31)/32*4;
+			if (0 == bmpInfoHeader.biHeight%2)
+				height = abs(bmpInfoHeader.biHeight);
+			else
+				height = abs(bmpInfoHeader.biHeight)+1;
+			*bgr24Width = width;
+			*bgr24Height = height;
+
+			bgr24SizeMin = width*height*bmpInfoHeader.biBitCount/8;
+			if (bgr24SizeMin <= *bgr24Size) {
+				*bgr24Size = bgr24SizeMin;
+				bmpData = bmpBuff+bmpFileHeader.bfOffBits;
+				switch (bmpInfoHeader.biBitCount) {
+					case 24:
+						memcpy(bgr24Buff, bmpData, bgr24SizeMin);
+						break;
+					case 16:
+						bmpData2 = (unsigned char *)malloc(bgr24SizeMin);
+						for (hIdx = 0; hIdx < height; hIdx++) {
+							for (wIdx = 0; wIdx < width*bmpInfoHeader.biBitCount/8; wIdx++) {
+								bmpData2[hIdx*width*bmpInfoHeader.biBitCount/8+wIdx] = bmpData[(height-hIdx-1)*width*bmpInfoHeader.biBitCount/8+wIdx];
+							}
+						}
+						for (bmpIdx = 0; bmpIdx < bgr24SizeMin; bmpIdx += 2) {
+							*(bgr24Buff+0) = (bmpData2[bmpIdx]&0x1F)<<3;
+							*(bgr24Buff+1) = ((bmpData2[bmpIdx]&0xE0)>>2) + ((bmpData2[bmpIdx+1]&0x03)<<6);
+							*(bgr24Buff+2) = (bmpData2[bmpIdx+1]&0x7C)<<1;
+							bgr24Buff += 3;
+						}
+						free(bmpData2);
+						break;
+					default:
+						bmpData2 = (unsigned char *)malloc(bgr24SizeMin);
+						for (hIdx = 0; hIdx < height; hIdx++) {
+							for (wIdx = 0; wIdx < width*bmpInfoHeader.biBitCount/8; wIdx++) {
+								bmpData2[hIdx*width*bmpInfoHeader.biBitCount/8+wIdx] = bmpData[(height-hIdx-1)*width*bmpInfoHeader.biBitCount/8+wIdx];
+							}
+						}
+						paletteSize = pow(float(2), bmpInfoHeader.biBitCount);
+						rgbQuad = (RGBQUA *)malloc(sizeof(RGBQUA)*paletteSize);
+						memcpy((unsigned char *)rgbQuad, bmpData, sizeof(RGBQUA)*paletteSize);
+						for (bmpIdx = 0; bmpIdx < bgr24SizeMin; bmpIdx++) {
+							switch(bmpInfoHeader.biBitCount) {
+								case 1: bmpMask = 0x80; break;
+								case 2: bmpMask = 0xC0; break;
+								case 4: bmpMask = 0xF0; break;
+								case 8: bmpMask = 0xFF; break;
+							}
+							bitIdx = 1;
+							while (bmpMask) {
+								rgbIdx = bmpMask == 0xFF ? bmpData2[bmpIdx] : ((bmpData2[bmpIdx]&bmpMask)>>(8-bitIdx*bmpInfoHeader.biBitCount));
+								*(bgr24Buff+0) = rgbQuad[rgbIdx].rgbBlue;
+								*(bgr24Buff+1) = rgbQuad[rgbIdx].rgbGreen;
+								*(bgr24Buff+2) = rgbQuad[rgbIdx].rgbRed;
+
+								if (8 == bmpInfoHeader.biBitCount) bmpMask = 0;
+								else bmpMask >>= bmpInfoHeader.biBitCount;
+								bgr24Buff += 3;
+								bitIdx++;
+							}
+						}
+						free(rgbQuad);
+						free(bmpData2);
+						break;
+				}
+				result = 0;
+			}
+		}
+	}
+	return result;
+}
+
 
 int main(int argc, char *argv[]) {
-	FILE *pixelFile, *pixelFile2, *jpgFile, *jpgFile2;
-	uint8_t *pixelBuff, *pixelBuff2, *jpgBuff, *jpgBuff2;
+	FILE *pixelFile, *pixelFile2, *jpgFile, *jpgFile2, *bmpFile;
+	uint8_t *pixelBuff, *pixelBuff2, *jpgBuff, *jpgBuff2, *bmpBuff;
 	int jpgSize = 1024*1024*3;
 	int jpgSize2 = 1024*1024*3;
 	int pixelSize = 1024*1024*3;
 	int pixelSize2 = 1024*1024*3;
+	int bmpSize = 1024*1024*3;
 	int pixelFmt, pixelWidth, pixelHeight;
 
 	CRTMEM_END();
@@ -226,28 +392,58 @@ int main(int argc, char *argv[]) {
 	jpgBuff = (uint8_t *)malloc(jpgSize);
 	jpgBuff2 = (uint8_t *)malloc(jpgSize2);
 	pixelBuff2 = (uint8_t *)malloc(pixelSize2);
+	bmpBuff = (uint8_t *)malloc(bmpSize);
 
-	pixelFile = fopen("cuc_view_480x272.yuv", "rb");
+	pixelFile = fopen("ffmpeg_480x272_YUVJ420P.yuv", "rb");
 	pixelSize = fread(pixelBuff, sizeof(uint8_t), pixelSize, pixelFile);
 	fclose(pixelFile);
 
-/*
 	Pixel_to_Pixel(pixelBuff, pixelSize, PIXEL_FMT_YUVJ420P, 480, 272,
-		pixelBuff2, &pixelSize2, PIXEL_FMT_YUV420P, 480, 372);
-*/
+		pixelBuff2, &pixelSize2, PIXEL_FMT_BGR24, 444, 272);
+
+	pixelFile2 = fopen("ffmpeg_444x272_BGR24.rgb", "wb");
+	pixelSize2 = fwrite(pixelBuff2, sizeof(uint8_t), pixelSize2, pixelFile2);
+	fclose(pixelFile2);
+
+	BGR24_to_BMP(pixelBuff2, pixelSize2, 444, 272, bmpBuff, &bmpSize);
+
+	bmpFile = fopen("ffmpeg_444x272_.bmp", "wb");
+	bmpSize = fwrite(bmpBuff, sizeof(uint8_t), bmpSize, bmpFile);
+	fclose(bmpFile);
+
+	bmpFile = fopen("down32.bmp", "rb");
+	bmpSize = fread(bmpBuff, sizeof(uint8_t), bmpSize, bmpFile);
+	fclose(bmpFile);
+
+	pixelSize2 = 1024*1024*3;
+	memset(pixelBuff2, 0, pixelSize2);
+	BMP_to_BGR24(bmpBuff, bmpSize, &pixelWidth, &pixelHeight, pixelBuff2, &pixelSize2);
+	printf("[BMP_to_BGR24]width=%d, height=%d\n", pixelWidth, pixelHeight);
+
+	pixelFile2 = fopen("ffmpeg_444x272_bgr24.rgb", "wb");
+	pixelSize2 = fwrite(pixelBuff2, sizeof(uint8_t), pixelSize2, pixelFile2);
+	fclose(pixelFile2);
+
+	Pixel_to_Pixel(pixelBuff2, pixelSize2, PIXEL_FMT_BGR24, pixelWidth, pixelHeight,
+		pixelBuff, &pixelSize, PIXEL_FMT_YUV444P, 444, 272);
+
+	pixelFile = fopen("ffmpeg_444x272_YUV444P.yuv", "wb");
+	pixelSize = fwrite(pixelBuff, sizeof(uint8_t), pixelSize, pixelFile);
+	fclose(pixelFile);
+
 	Pixel_to_JPG(pixelBuff, pixelSize, PIXEL_FMT_YUVJ420P, 480, 272, jpgBuff, &jpgSize);
 
-	jpgFile = fopen("cuc_view_480x272.jpg", "wb");
+	jpgFile = fopen("ffmpeg_480x272_YUVJ420P.jpg", "wb");
 	jpgSize = fwrite(jpgBuff, sizeof(uint8_t), jpgSize, jpgFile);
 	fclose(jpgFile);
 
-	jpgFile2 = fopen("cuc_view_480x272_2.jpg", "rb");
+	jpgFile2 = fopen("ffmpeg_480x272_YUVJ420P_2.jpg", "rb");
 	jpgSize2 = fread(jpgBuff2, sizeof(uint8_t), jpgSize2, jpgFile2);
 	fclose(jpgFile2);
 
-	JPG_to_Pixel(jpgBuff2, jpgSize2, PIXEL_FMT_YUV420P, pixelBuff2, &pixelSize2, &pixelWidth, &pixelHeight);
+	JPG_to_Pixel(jpgBuff2, jpgSize2, PIXEL_FMT_YUV420P, 500, 272, pixelBuff2, &pixelSize2);
 
-	pixelFile2 = fopen("cuc_view_480x272_2.yuv", "wb");
+	pixelFile2 = fopen("ffmpeg_500x272_YUV420P.yuv", "wb");
 	pixelSize2 = fwrite(pixelBuff2, sizeof(uint8_t), pixelSize2, pixelFile2);
 	fclose(pixelFile2);
 
@@ -255,6 +451,7 @@ int main(int argc, char *argv[]) {
 	free(pixelBuff2);
 	free(jpgBuff);
 	free(jpgBuff2);
+	free(bmpBuff);
 
 	CRTMEM_END();
 

@@ -18,10 +18,12 @@
 extern "C" {
 #endif // __cplusplus
 
-	int JPG_to_Pixel(const unsigned char *jpgBuff, int jpgSize, int pixelFmt, unsigned char *pixelBuff, int *pixelSize, int *pixelWidth, int *pixelHeight);	
+	int JPG_to_Pixel(const unsigned char *jpgBuff, int jpgSize, int pixelFmt, int pixelWidth, int pixelHeight, unsigned char *pixelBuff, int *pixelSize);	
 	int Pixel_to_JPG(const unsigned char *pixelBuff, int pixelSize, int pixelFmt, int pixelWidth, int pixelHeight, unsigned char *jpgBuff, int *jpgSize);
 	int Pixel_to_Pixel(const unsigned char *inPixBuff, int inPixSize, int inPixFmt, int inPixWidth, int inPixHeight, 
 					   unsigned char *outPixBuff, int *outPixSize, int outPixFmt, int outPixWidth, int outPixHeight);
+	int BGR24_to_BMP(const unsigned char *bgr24Buff, int bgr24Size, int bgr24Width, int bgr24Height, unsigned char *bmpBuff, int *bmpSize);
+	int BMP_to_BGR24(const unsigned char *bmpBuff, int bmpSize, int *bgr24Width, int *bgr24Height, unsigned char *bgr24Buff, int *bgr24Size);
 
 #ifdef __cplusplus
 };
