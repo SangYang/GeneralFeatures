@@ -1,10 +1,8 @@
-#include "stdafx.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <mbstring.h>
 #include "jpg.h"
-
 
 static bool CheckJPGMeasure(const unsigned char *buffer, int size) {
 	unsigned char *find_info = NULL;
@@ -95,10 +93,9 @@ bool IsRightJPG(const char *file_name) {
 	buffer[size] = '\0';
 	fread(buffer, sizeof(unsigned char), size, file);
 	is_right_format = CheckJPGFormat(buffer, size);
-	is_right_measure = true;//CheckJPGMeasure(buffer, size);
+	is_right_measure = CheckJPGMeasure(buffer, size);
 	free(buffer);
 	fclose(file);
-	file = NULL;
 
 	return (is_right_format && is_right_measure);
 }
