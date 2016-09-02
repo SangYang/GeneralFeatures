@@ -1,12 +1,11 @@
 #include "windows_socket.h"
 #include <stdio.h>  
 #include <time.h>
-#include "debug_assert.h"
-#include "debug_log.h"
+#include "common_log.h"
 
 #pragma comment(lib, "ws2_32.lib")   
 
-bool InitSocket(SOCKET *handle) {
+int Socket_Init(SOCKET *handle) {
 	SOCKET sockHandle;
  	WORD version;  
 	WSADATA wsaData;  
@@ -16,55 +15,55 @@ bool InitSocket(SOCKET *handle) {
 	version = MAKEWORD(2, 2);  
 	wsaRet = WSAStartup(version, &wsaData);
 	if (NO_ERROR != wsaRet) {
-		LOG("WSAStartup(2,2)=%d\n", wsaRet); 
-		return false;
+		LOGERROR("WSAStartup(2,2)=%d\n", wsaRet); 
+		return SOCK_ERR_WSASTARTUP;
 	}
 	else {
 		if (version != wsaData.wVersion) {   
-			LOG("Winsock Version error=%d.%d, right=%d.%d\n",   
+			LOGERROR("Winsock Version error=%d.%d, right=%d.%d\n",   
 				HIBYTE(wsaData.wVersion), LOBYTE(wsaData.wVersion), HIBYTE(version), LOBYTE(version)); 
 			WSACleanup();
-			return false;
+			return SOCK_ERR_VERSION;
 		} 
 		else {
 			sockHandle = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);  
 			if (INVALID_SOCKET == sockHandle) {
-				LOG("socket(AF_INET, SOCK_STREAM, IPPROTO_TCP)=INVALID_SOCKET, lastError=%d\n", WSAGetLastError());  
+				LOGERROR("socket(AF_INET, SOCK_STREAM, IPPROTO_TCP)=INVALID_SOCKET, lastError=%d\n", WSAGetLastError());  
 				WSACleanup();
-				return false;
+				return SOCK_ERR_SOCKETTCP;
 			}
 			else {
 				//ioctlsocket(handle, FIONBIO, &noBlock); //设置成非阻塞模式。
 				*handle = sockHandle;
-				return true;
+				return SOCKE_SUCCESS;
 			}
 		}
 	}
 }
 
-static bool SetSocketTimeout(const SOCKET handle, const time_t mseconds) {
+static int SetSocketTimeout(const SOCKET handle, const time_t mseconds) {
 	int setRet;
 
 	setRet = setsockopt(handle, SOL_SOCKET, SO_KEEPALIVE, (const char*)&mseconds, sizeof(mseconds));
 	if (-1 == setRet) {
-		LOG("setsockopt() SO_KEEPALIVE failure! [%d] %s\n", errno, strerror(errno));
-		return false;
+		LOGERROR("setsockopt() SO_KEEPALIVE failure! [%d] %s\n", errno, strerror(errno));
+		return SOCK_ERR_SETKEEPALIVE;
 	}
 	setRet = setsockopt(handle, SOL_SOCKET, SO_SNDTIMEO, (const char*)&mseconds, sizeof(mseconds));   
 	if (-1 == setRet) {
-		LOG("setsockopt() SO_SNDTIMEO failure! [%d] %s\n", errno, strerror(errno));
-		return false;
+		LOGERROR("setsockopt() SO_SNDTIMEO failure! [%d] %s\n", errno, strerror(errno));
+		return SOCK_ERR_SETSNDTIME;
 	}
 	setRet = setsockopt(handle, SOL_SOCKET, SO_RCVTIMEO, (const char*)&mseconds, sizeof(mseconds));
 	if (-1 == setRet) {
-		LOG("setsockopt() SO_RCVTIMEO failure! [%d] %s\n", errno, strerror(errno));
-		return false;
+		LOGERROR("setsockopt() SO_RCVTIMEO failure! [%d] %s\n", errno, strerror(errno));
+		return SOCK_ERR_SETRCVTIME;
 	}
-	return true;
+	return SOCKE_SUCCESS;
 }
 
 
-bool SetSocketServer(const char *ip, const int port, const SOCKET listenHandle) {
+int Socket_SetServer(const char *ip, const int port, const SOCKET listenHandle) {
 	struct sockaddr_in sockAddr;
 	int sockRet;
 
@@ -73,135 +72,136 @@ bool SetSocketServer(const char *ip, const int port, const SOCKET listenHandle) 
 	sockAddr.sin_addr.s_addr = inet_addr(ip);  
 	sockRet = bind(listenHandle, (SOCKADDR *)&sockAddr, sizeof(sockAddr));  
 	if (SOCKET_ERROR == sockRet) {
-		LOG("bind(%s,%d)=%d, lastError=%d\n", ip, port, sockRet, WSAGetLastError());  
+		LOGERROR("bind(%s,%d)=%d, lastError=%d\n", ip, port, sockRet, WSAGetLastError());  
 		closesocket(listenHandle);
 		WSACleanup();
-		return false;
+		return SOCK_ERR_BIND;
 	}
 	else {  
 		sockRet = listen(listenHandle, SOMAXCONN);  
 		if (SOCKET_ERROR == sockRet) {
-			LOG("listen(%d)=SOCKET_ERROR, lastError=%d\n", SOMAXCONN, WSAGetLastError()); 
+			LOGERROR("listen(%d)=SOCKET_ERROR, lastError=%d\n", SOMAXCONN, WSAGetLastError()); 
 			closesocket(listenHandle);
 			WSACleanup();
-			return false;
+			return SOCK_ERR_LISTEN;
 		}
 		else 
-			return true;
+			return SOCKE_SUCCESS;
 	} 
 }
 
-bool WaitConnectSocket(const SOCKET listenHandle, SOCKET *acceptHandle) {
+int Socket_WaitConnect(const SOCKET listenHandle, SOCKET *acceptHandle) {
 	SOCKET handle;
-	bool okSet;
+	int setRet;
 
 	handle = accept(listenHandle, NULL, NULL);  
 	if (INVALID_SOCKET == handle) {
-		LOG("accept()=INVALID_SOCKET, lastError=%d\n", WSAGetLastError()); 
+		LOGERROR("accept()=INVALID_SOCKET, lastError=%d\n", WSAGetLastError()); 
 		closesocket(listenHandle);
 		WSACleanup();
-		return false;
+		return SOCK_ERR_ACCEPT;
 	}
 	else {
-		okSet = true;//SetSocketTimeout(handle, 60*60*24*30); 
-		if (false == okSet) {
-			LOG("SetSocketTimeout(%d)=false\n", 60*60*24*30);
-			return false;			
+		setRet = SOCKE_SUCCESS;//SetSocketTimeout(handle, 60*60*24*30); 
+		if (SOCKE_SUCCESS != setRet) {
+			LOGERROR("SetSocketTimeout(%d)=%d\n", 60*60*24*30, setRet);
+			return setRet;			
 		}
 		else {
 			*acceptHandle = handle;
-			return true;		
+			return SOCKE_SUCCESS;		
 		}
 	}
 }
 
-bool ConnectSocket(const char *ip, const int port, const SOCKET connectHandle) {
+int Socket_Connect(const char *ip, const int port, const SOCKET connectHandle) {
 	struct sockaddr_in sockAddr;
 	int sockRet;
-	bool okSet;
+	int setRet;
 
 	sockAddr.sin_family = AF_INET;  
 	sockAddr.sin_port = htons(port);  
 	sockAddr.sin_addr.s_addr = inet_addr(ip);  
 	sockRet = connect(connectHandle, (SOCKADDR *)&sockAddr, sizeof(sockAddr));
 	if (SOCKET_ERROR == sockRet) {
-		LOG("connect(%s,%d)=SOCKET_ERROR, lastError=%d\n", ip, port, WSAGetLastError());
+		LOGERROR("connect(%s,%d)=SOCKET_ERROR, lastError=%d\n", ip, port, WSAGetLastError());
 		if (WSAEISCONN == WSAGetLastError()) {  // socket 已经建立连接
-			return true;
+			return SOCK_ERR_CONNECTED;
 		}
 		else 
-			return false;
+			return SOCK_ERR_CONNECT;
 
 	}
 	else {
-		okSet = true;//SetSocketTimeout(connectHandle, 500);
-		if (false == okSet) {
-			LOG("SetSocketTimeout(%d)=false\n", 500);
-			return false;			
+		setRet = SOCKE_SUCCESS;//SetSocketTimeout(connectHandle, 500);
+		if (SOCKE_SUCCESS != setRet) {
+			LOGERROR("SetSocketTimeout(%d)=%d\n", 500, setRet);
+			return setRet;			
 		}
 		else {
-			return true;
+			return SOCKE_SUCCESS;
 		}
 	}
 }
 
-int SendSocket(const SOCKET handle, const void *pvData, const int size) {
+int Socket_Send(const SOCKET handle, const void *pvData, const int size) {
 	const int c_PerSize = 256;
 	char *data;
-	int per_size;
-	int persend_size;
-	int allsend_size;
-	int remain_size;
+	int perSize;
+	int sendRet;
+	int retSum = 0;
+	int remainSize;
 
 	data = (char *)pvData;
-	allsend_size = 0;
-	while (allsend_size < size) {
-		remain_size = size - allsend_size;
-		if (c_PerSize > remain_size)
-			per_size = remain_size;
+	while (retSum < size) {
+		remainSize = size - retSum;
+		if (c_PerSize > remainSize)
+			perSize = remainSize;
 		else 
-			per_size = c_PerSize;
-		persend_size = send(handle, data+allsend_size, per_size, 0);
-		if (per_size != persend_size) {
-			//LOG("send(%d)=%d\n", per_size, persend_size);
+			perSize = c_PerSize;
+		sendRet = send(handle, data+retSum, perSize, 0);
+		if (0 < sendRet)
+			retSum += sendRet;
+		else if (0 == sendRet || retSum == size)
 			break;
+		else {
+			LOGERROR("send(#%d,%d)=%d, lastError=%d\n", handle, perSize, sendRet, WSAGetLastError());
+			return SOCK_ERR_SEND;
 		}
-		else
-			allsend_size += persend_size;
 	}
-	return allsend_size;
+	return retSum;
 }
 
-
-int RecvSocket(const SOCKET handle, void *pvData, const int size) {
+int Socket_Recv(const SOCKET handle, void *pvData, const int size) {
 	const int c_PerSize = 256;
 	char *data;
-	int per_size;
-	int perrecv_size;
-	int allrecv_size;
-	int remain_size;
+	int perSize;
+	int recvRet;
+	int retSum = 0;
+	int remainSize;
 
 	data = (char *)pvData;
-	allrecv_size = 0;
-	while (allrecv_size < size) {
-		remain_size = size - allrecv_size;
-		if (c_PerSize > remain_size)
-			per_size = remain_size;	
+	while (retSum < size) {
+		remainSize = size - retSum;
+		if (c_PerSize > remainSize) 
+			perSize = remainSize;	
 		else 
-			per_size = c_PerSize;
-		perrecv_size = recv(handle, data + allrecv_size, per_size, 0);
-		if (per_size != perrecv_size) {
-			//LOG("recv(%d)=%d\n", per_size, perrecv_size);
+			perSize = c_PerSize;
+		recvRet = recv(handle, data+retSum, perSize, 0);
+		if (0 < recvRet)
+			retSum += recvRet;
+		else if (0 == recvRet || retSum == size)
 			break;
+		else {
+			LOGERROR("recv(#%d,%d)=%d, lastError=%d\n", handle, perSize, recvRet, WSAGetLastError());
+			return SOCK_ERR_RECV;
 		}
-		else
-			allrecv_size += perrecv_size;
 	}
-	return allrecv_size;
+	return retSum;
 }
 
 
-void UninitSocket(const SOCKET handle) {
+void Socket_Uninit(const SOCKET handle) {
 	closesocket(handle); 
 	WSACleanup();  
 }
