@@ -1,4 +1,5 @@
 #include "windows_socket.h"
+#include <errno.h>
 #include <stdio.h>  
 #include <time.h>
 #include "common_log.h"

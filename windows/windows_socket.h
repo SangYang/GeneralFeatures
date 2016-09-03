@@ -1,7 +1,7 @@
 #ifndef WINDOWS_SOCKET_H
 #define WINDOWS_SOCKET_H
 
-
+#define WIN32_LEAN_AND_MEAN
 #include <winsock2.h>
 
 #define SOCKE_SUCCESS          (1)
