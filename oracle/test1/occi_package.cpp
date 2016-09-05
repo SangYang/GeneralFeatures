@@ -4,189 +4,165 @@
 #include <ctime>
 #include "occi.h"
 #include "common_log.h"
-#include "common_time.h"
-#include "record_cache.h"
 
 #pragma comment(lib, "oraocci11")
 
 using namespace std;
 using namespace oracle::occi;
 
-static Environment *g_environment = NULL;
-static Connection *g_connection = NULL;
-
-void* OCCI_CreateConnection(const char *username, const char *password, const char *connectString) {
-	Statement *statement = NULL;
-
+void* OCCI_InitEnvironment(const char *charset, const char *ncharset) {
 	try {
-		g_environment = Environment::createEnvironment("ZHS16GBK", "ZHS16GBK");//(Environment::DEFAULT);
-		if (NULL != g_environment) {
-			g_connection = g_environment->createConnection(username, password, connectString);
-			if (NULL != g_connection) {
-				statement = g_connection->createStatement();
-			}
-		}
+		Environment *environment = Environment::createEnvironment(Environment::DEFAULT);//(charset, ncharset);//("ZHS16GBK", "ZHS16GBK", Environment::DEFAULT);
+		return environment;	
 	}
 	catch (SQLException &ex) {
-		LOGERROR("[OCCI]username=%s, password=%s, connectString=%s\n", username, password, connectString);
-		LOGERROR("[OCCI]%d:%s\n", ex.getErrorCode(), ex.getMessage().c_str());
-	}
-
-	return statement;
-}
-
-void OCCI_DestroyConnection(const void *statement) {
-	Statement *stmt = (Statement *)statement;
-
-	try {
-		if (NULL != stmt && NULL != g_connection) 
-			g_connection->terminateStatement(stmt);
-		if (NULL != g_connection && NULL != g_environment) 
-			g_environment->terminateConnection(g_connection);
-		if (NULL != g_environment) 
-			Environment::terminateEnvironment(g_environment);
-	}
-	catch (SQLException &ex) {
-		LOGERROR("[OCCI]statement=0x%p, connection=0x%p, environment=0x%p\n", stmt, g_connection, g_environment);
+		LOGERROR("[OCCI]createEnvironment(%s,%s)=NULL\n", charset, ncharset);
 		LOGERROR("[OCCI]%d:%s\n", ex.getErrorCode(), ex.getMessage().c_str());
 	}
 }
 
-// 201608 --- ITS_CAR_PASS18(1~26)
-int OCCI_GetCarPassIndex() {
-	time_t nowTime;
-	struct tm tmTime;
-	int nowYear;
-	int nowMonth;
-	int diff;
-	int index;
-
-	time(&nowTime);
-	memcpy(&tmTime, localtime(&nowTime), sizeof(struct tm));
-	nowYear = tmTime.tm_year+1900;
-	nowMonth = tmTime.tm_mon+1;
-	diff = (nowYear-2016)*12 + (nowMonth-8) + 18;
-	index = diff%27 + (int)(diff/27);
-	return index;
-}
-
-static void GetQueryEndTime(const char *startTime, const char *intervalTime, char *endTime, int endSize) {
-	int startRawTime = GetRawTime(startTime);
-	int intervalRawTime = atoi(intervalTime);
-	int endRawTime = startRawTime + intervalRawTime;
-	GetStrTime(endRawTime, endTime, endSize);
-	printf("[query]%s %s %s\n", startTime, intervalTime, endTime);
-}
-
-static bool IsRightQueryTime(const char *endTime) {
-	int endRawTime = GetRawTime(endTime);
-	int nowRawTime = (int)time(NULL);
-	int diffTime = nowRawTime - endRawTime;
-	if (3600*10 > diffTime) {// 10hour
-		LOGINFO("[time]too new date! 10hour(%d) > %d(nowTime %d-endTime %s)\n", 3600*5, diffTime, nowRawTime, endTime);
-		return false;
+void OCCI_UninitEnvironment(const void *environment) {
+	try {
+		if (NULL != environment) 
+			Environment::terminateEnvironment((Environment *)environment);
 	}
-	else 
-		return true;
+	catch (SQLException &ex) {
+		LOGERROR("[OCCI]terminateEnvironment(0x%p)=void\n", environment);
+		LOGERROR("[OCCI]%d:%s\n", ex.getErrorCode(), ex.getMessage().c_str());
+	}
 }
 
-void OCCI_QueryCarPass(const void *statement, 
-					   const int carPassIndex, 
-					   const char *recordPath,
-					   const t_CameraConfig *cameraConfig, 
-					   void (*DealwithQuery)(t_OcciResult *occiResult, const t_CameraConfig *cameraConfig)) {
-	Statement *stmt = (Statement *)statement;
-	ResultSet *rs;
-	int result;
+void* OCCI_CreateConnectionPool(const void *environment, const char *username, const char *password, const char *connectString, int maxConn) {
+	try {
+		ConnectionPool *connPool = NULL;
+		if (NULL != environment) 
+			connPool = ((Environment *)environment)->createConnectionPool(username, password, connectString, 0, maxConn, 1);		
+		return connPool;	
+	}
+	catch (SQLException &ex) {
+		LOGERROR("[OCCI]createConnectionPool(%s,%s,%s,%d)=NULL\n", username, password, connectString, maxConn);
+		LOGERROR("[OCCI]%d:%s\n", ex.getErrorCode(), ex.getMessage().c_str());
+	}
+}
+
+void OCCI_DestroyConnectionPool(const void *environment, const void *connPool) {
+	try {
+		if (NULL != environment && NULL != connPool) 
+			((Environment *)environment)->terminateConnectionPool((ConnectionPool *)connPool);
+	}
+	catch (SQLException &ex) {
+		LOGERROR("[OCCI]0x%p->terminateConnectionPool(0x%p)=void\n", environment, connPool);
+		LOGERROR("[OCCI]%d:%s\n", ex.getErrorCode(), ex.getMessage().c_str());
+	}
+}
+
+void* OCCI_CreateConnectionByPool(const void *connPool, const char *username, const char *password) {
+	try {
+		Connection *conn = NULL;
+		if (NULL != connPool) 
+			conn = ((ConnectionPool *)connPool)->createConnection(username, password);	
+		return conn;
+	}
+	catch (SQLException &ex) {
+		LOGERROR("[OCCI]createConnection(%s,%s)=NULL\n", username, password);
+		LOGERROR("[OCCI]%d:%s\n", ex.getErrorCode(), ex.getMessage().c_str());
+	}
+}
+
+void OCCI_DestroyConnectionByPool(const void *connPool, const void *conn) {
+	try {
+		if (NULL != connPool && NULL != conn) 
+			((ConnectionPool *)connPool)->terminateConnection((Connection *)conn);	
+	}
+	catch (SQLException &ex) {
+		LOGERROR("[OCCI]0x%p->terminateConnection(0x%p)=void\n", connPool, conn);
+		LOGERROR("[OCCI]%d:%s\n", ex.getErrorCode(), ex.getMessage().c_str());
+	}
+}
+
+void* OCCI_CreateConnection(const void *environment, const char *username, const char *password, const char *connectString) {
+	try {
+		Connection *conn = NULL;
+		if (NULL != environment) 
+			conn = ((Environment *)environment)->createConnection(username, password, connectString);	
+		return conn;
+	}
+	catch (SQLException &ex) {
+		LOGERROR("[OCCI]createConnection(%s,%s,%s)=NULL\n", username, password, connectString);
+		LOGERROR("[OCCI]%d:%s\n", ex.getErrorCode(), ex.getMessage().c_str());
+	}
+}
+
+void OCCI_DestroyConnection(const void *environment, const void *conn) {
+	try {
+		if (NULL != environment && NULL != conn) 
+			((Environment *)environment)->terminateConnection((Connection *)conn);	
+	}
+	catch (SQLException &ex) {
+		LOGERROR("[OCCI]0x%p->terminateConnection(0x%p)=void\n", environment, conn);
+		LOGERROR("[OCCI]%d:%s\n", ex.getErrorCode(), ex.getMessage().c_str());
+	}
+}
+
+void* OCCI_CreateStatement(const void *connection) {
+	try {
+		Statement *statement = NULL;
+		if (NULL != connection) 
+			statement = ((Connection *)connection)->createStatement();	
+		return statement;
+	}
+	catch (SQLException &ex) {
+		LOGERROR("[OCCI]createStatement()=NULL\n");
+		LOGERROR("[OCCI]%d:%s\n", ex.getErrorCode(), ex.getMessage().c_str());
+	}
+}
+
+void OCCI_DestroyStatement(const void *connection, const void *statement) {
+	try {
+		if (NULL != connection && NULL != statement) 
+			((Connection *)connection)->terminateStatement((Statement *)statement);
+	}
+	catch (SQLException &ex) {
+		LOGERROR("[OCCI]0x%p->terminateStatement(0x%p)=void\n", connection, statement);
+		LOGERROR("[OCCI]%d:%s\n", ex.getErrorCode(), ex.getMessage().c_str());
+	}
+}
+
+void OCCI_QuerySql(const void *statement, void (*OCCI_DoQueryResult)(t_OcciResult *occiResult)) {
 	t_OcciResult occiResult;
-	int areaIdx, devIdx;
-	char table[32];
-	char startTime[32];
-	char endTime[32];
-	char intervalTime[8];
-	char *area = NULL;
-	char *device = NULL;
-	char *sql = NULL;
-	char tmpsql[] = "SELECT "
-		"CITS.%s.UNID, "
-		"CITS.%s.PASS_AREA_UNID, "
-		"CITS.%s.PASS_DEVICE_UNID, "
-		"CITS.%s.PASS_BAY_UNID, "
-		"CITS.%s.PASS_DATETIME, " // 
-		"CITS.%s.PASS_PLATE_TYPE, "
-		"CITS.%s.PASS_PLATE_COLOR, "
-		"CITS.%s.PASS_PLATE_NO, "
-		"CITS.%s.PASS_CAR_SPEED, "
-		"CITS.%s.PASS_CAR_TYPE, " //
-		"CITS.%s.PASS_CAR_COLOR, "
-		"CITS.%s.PASS_PIC_FULL_PATH, "
-		"CITS.%s.PASS_ROAD_NO "
+	Statement *stmt = (Statement *)statement;
+	ResultSet *resultSet;
+	char sql[] = "SELECT "
+		"SCOTT.EMP.EMPNO, "
+		"SCOTT.EMP.ENAME, "
+		"SCOTT.EMP.JOB, "
+		"SCOTT.EMP.MGR, "
+		"SCOTT.EMP.HIREDATE, "
+		"SCOTT.EMP.SAL, "
+		"SCOTT.EMP.COMM, "
+		"SCOTT.EMP.DEPTNO "
 		"FROM "
-		"CITS.%s "
+		"SCOTT.EMP "
 		"WHERE "
-		"ROWNUM <= 300 "
-		"AND "
-		"CITS.%s.PASS_DATETIME >= TO_DATE('%s', 'YYYYMMDDHH24MISS') " //
-		"AND "
-		"CITS.%s.PASS_DATETIME < TO_DATE('%s', 'YYYYMMDDHH24MISS') "
-		"AND "
-		"CITS.%s.PASS_AREA_UNID IN (%s) "
-		"AND "
-		"CITS.%s.PASS_DEVICE_UNID IN (%s)";
+		"ROWNUM <= 30 AND "
+		"SCOTT.EMP.HIREDATE >= TO_DATE('1980-01-01 00:00:00', 'YYYY-MM-DD HH24:MI:SS') AND "
+		"SCOTT.EMP.HIREDATE < TO_DATE('1982-01-01 00:00:00', 'YYYY-MM-DD HH24:MI:SS') AND "
+		"SCOTT.EMP.JOB IN ('MANAGER', 'ANALYST', 'BBBB') "
+		"ORDER BY "
+		"SCOTT.EMP.EMPNO ASC"; // ASC:ÉýÐò DESC:½µÐò
 
-	Record_ReadDownload(recordPath, startTime, sizeof(startTime), intervalTime, sizeof(intervalTime));
-	GetQueryEndTime(startTime, intervalTime, endTime, sizeof(endTime));
-	if (NULL == statement) {
-		LOGERROR("NULL == statement\n");
-		return;
-	}
-	if (false == IsRightQueryTime(endTime)) {
-		LOGINFO("false == IsRightQueryTime(%s)", endTime);
-		return;
-	}
+	LOGINFO("%s\n", sql);
 	try {
-		area = (char *)malloc(1024);
-		device = (char *)malloc(2048);
-		sql = (char *)malloc(4096);
-		sprintf(table, "ITS_CAR_PASS%d", carPassIndex);
-		strcpy(area, "'test'");
-		strcpy(device, "'test'");
-		for (areaIdx = 0; areaIdx < cameraConfig->m_areaNum; areaIdx++) {
-			sprintf(area, "%s, '%s'", area, cameraConfig->m_area[areaIdx].m_id);		
-			for (devIdx = 0; devIdx < cameraConfig->m_area[areaIdx].m_deviceNum; devIdx++) {
-				sprintf(device, "%s, '%s'", device, cameraConfig->m_area[areaIdx].m_device[devIdx].m_id);			
-			}
-		}
-		sprintf(sql, tmpsql, table, table, table, table, table, 
-			table, table, table, table, table, 
-			table, table, table, table, table, 
-			startTime, table, endTime, table, area, 
-			table, device);
-		LOGINFO("\r\n%s\n", sql);
 		stmt->setSQL(sql);
-		free(sql);
-		free(device);
-		free(area);
-		rs = stmt->executeQuery();
-		while (rs->next()) {
+		resultSet = stmt->executeQuery();
+		while (resultSet->next()) {
 			memset(&occiResult, 0, sizeof(t_OcciResult));           
-			strcpy(occiResult.m_unid, rs->getString(1).c_str());
-			strcpy(occiResult.m_areaid, rs->getString(2).c_str());
-			strcpy(occiResult.m_deviceid, rs->getString(3).c_str());
-			strcpy(occiResult.m_bayid, rs->getString(4).c_str());
-			strcpy(occiResult.m_dateTime, rs->getDate(5).toText("yyyymmddhh24miss").c_str());
-			strcpy(occiResult.m_plateType, rs->getString(6).c_str());
-			strcpy(occiResult.m_plateColor, rs->getString(7).c_str());
-			strcpy(occiResult.m_plateNo, rs->getString(8).c_str());
-			strcpy(occiResult.m_carSpeed, rs->getString(9).c_str());
-			strcpy(occiResult.m_carType, rs->getString(10).c_str());
-			strcpy(occiResult.m_carColor, rs->getString(11).c_str());
-			strcpy(occiResult.m_picPath, rs->getString(12).c_str());
-			strcpy(occiResult.m_roadNo, rs->getString(13).c_str());
-			DealwithQuery(&occiResult, cameraConfig);
+			strcpy(occiResult.m_first, resultSet->getString(1).c_str());
+			strcpy(occiResult.m_second, resultSet->getString(2).c_str());
+			strcpy(occiResult.m_three, resultSet->getString(3).c_str());			
+			OCCI_DoQueryResult(&occiResult);  
 		}
-		stmt->closeResultSet(rs);
-		Record_WriteDownload(recordPath, endTime, intervalTime);
+		stmt->closeResultSet(resultSet);
 	}
 	catch (SQLException &ex) {
 		LOGERROR("[OCCI]statement=0x%p, sql=%s\n", statement, sql);
@@ -194,29 +170,34 @@ void OCCI_QueryCarPass(const void *statement,
 	}
 }
 
-void OCCI_QueryBaseArea(const void *statement, const char *areaid, char *areaName) {
+int OCCI_UpdateSql(const void *statement) {
 	Statement *stmt = (Statement *)statement;
-	ResultSet *rs;
-	int result;
-	char sql[512];
-	char tmpsql[] = "SELECT "
-		"CITS.BASE_AREA.AREANAME "
-		"FROM "
-		"CITS.BASE_AREA "
+	int updateRet;
+	char sql[] = "INSERT INTO "
+		"SCOTT.EMP ("	
+		"SCOTT.EMP.EMPNO, "
+		"SCOTT.EMP.ENAME, "
+		"SCOTT.EMP.JOB, "
+		"SCOTT.EMP.MGR, "
+		"SCOTT.EMP.HIREDATE) "
+		"VALUES ("
+		"1111, 'AAAA', 'BBBB', 2221, TO_DATE('1980-01-01 00:00:00', 'YYYY-MM-DD HH24:MI:SS'))";
+/*
+	char sql[] = "UPDATE " 
+		"SCOTT.EMP "
+		"SET "
+		"SCOTT.EMP.ENAME = 'AAAA', " 
+		"SCOTT.EMP.JOB = 'BBBB', "
+		"SCOTT.EMP.MGR = '1234', "
+		"SCOTT.EMP.HIREDATE = TO_DATE('1980-01-01 00:00:00', 'YYYY-MM-DD HH24:MI:SS') "
 		"WHERE "
-		"CITS.BASE_AREA.AREAID = '%s'";
-
-	if (NULL == statement) return;
+		"SCOTT.EMP.EMPNO = 1111";
+*/
+	LOGINFO("%s\n", sql);
 	try {
-		sprintf(sql, tmpsql, areaid);
-		//LOGINFO("%s\n", sql);
 		stmt->setSQL(sql);
-		rs = stmt->executeQuery();
-		while (rs->next()) {
-			//printf("%s\n", rs->getString(1).c_str());    
-			strcpy(areaName, rs->getString(1).c_str());           
-		}
-		stmt->closeResultSet(rs);
+		updateRet = (int)stmt->executeUpdate();
+		return updateRet;
 	}
 	catch (SQLException &ex) {
 		LOGERROR("[OCCI]statement=0x%p, sql=%s\n", statement, sql);
@@ -224,92 +205,102 @@ void OCCI_QueryBaseArea(const void *statement, const char *areaid, char *areaNam
 	}
 }
 
-void OCCI_QueryBaseDevice(const void *statement, const char *deviceid, char *deviceName, char *deviceIP) {
+int OCCI_UpdateMultiSql(const void *connection, const void *statement) {
+	Connection *conn = (Connection *)connection;
 	Statement *stmt = (Statement *)statement;
-	ResultSet *rs;
-	int result;
-	char sql[512];
-	char tmpsql[] = "SELECT "
-		"CITS.BASE_DEVICE.DEVICENAME, "
-		"CITS.BASE_DEVICE.DEVICEIP "
-		"FROM "
-		"CITS.BASE_DEVICE "
+	int iterMax, iterIdx;
+	int updateRet;
+	int key[] = {1111, 2222, 3333, 4444};
+	char *ename[] = {"A", "AA", "AAA", "AAAA"};
+/*
+	char sql[] = "INSERT INTO "
+		"SCOTT.EMP ("	
+		"SCOTT.EMP.ENAME, "
+		"SCOTT.EMP.EMPNO, "
+		"SCOTT.EMP.JOB, "
+		"SCOTT.EMP.MGR, "
+		"SCOTT.EMP.HIREDATE) "
+		"VALUES ("
+		":1, :2, 'BBBB', 2221, TO_DATE('1980-01-01 00:00:00', 'YYYY-MM-DD HH24:MI:SS'))";
+*/
+	char sql[] = "UPDATE " 
+		"SCOTT.EMP "
+		"SET "
+		"SCOTT.EMP.ENAME = :1, " 
+		"SCOTT.EMP.JOB = 'BBBB', "
+		"SCOTT.EMP.MGR = '1234', "
+		"SCOTT.EMP.HIREDATE = TO_DATE('1980-01-01 00:00:00', 'YYYY-MM-DD HH24:MI:SS') "
 		"WHERE "
-		"CITS.BASE_DEVICE.DEVICEID = '%s'";
+		"SCOTT.EMP.EMPNO = :2";
 
-	if (NULL == statement) return;
+	LOGINFO("%s\n", sql);
+	iterMax = sizeof(key) / sizeof(key[0]);
 	try {
-		sprintf(sql, tmpsql, deviceid);
+		stmt->setAutoCommit(false);
 		stmt->setSQL(sql);
-		rs = stmt->executeQuery();
-		while (rs->next()) {
-			strcpy(deviceName, rs->getString(1).c_str()); 
-			strcpy(deviceIP, rs->getString(2).c_str());
-		}
-		stmt->closeResultSet(rs);
+		stmt->setMaxIterations(iterMax); 
+		stmt->setMaxParamSize(1, sizeof(string));
+		stmt->setMaxParamSize(2, sizeof(int));
+		for (iterIdx = 0; iterIdx < iterMax; iterIdx++) {
+			stmt->setString(1, ename[iterIdx]);
+			stmt->setInt(2, key[iterIdx]);
+			if (iterIdx != iterMax-1)
+				stmt->addIteration();
+		}			
+		updateRet = (int)stmt->executeUpdate();
+		conn->commit();
+		return updateRet;
 	}
 	catch (SQLException &ex) {
-		LOGERROR("[OCCI]statement=0x%p, sql=%s\n", statement, sql);
+		LOGERROR("[OCCI]connection=0x%p, statement=0x%p, getUpdateCount()=%d, sql=%s\n", connection, statement, stmt->getUpdateCount(), sql);
 		LOGERROR("[OCCI]%d:%s\n", ex.getErrorCode(), ex.getMessage().c_str());
+		conn->rollback();
 	}
 }
 
-void OCCI_QueryBaseBayonet(const void *statement, const char *bayid, char *bayName, char *bayAddress, char *bayPicIP) {
-	Statement *stmt = (Statement *)statement;
-	ResultSet *rs;
-	int result;
-	char sql[512];
-	char tmpsql[] = "SELECT "
-		"CITS.BASE_BAYONET.BAYONETNAME, "
-		"CITS.BASE_BAYONET.ADDRESS, "
-		"CITS.BASE_BAYONET.PIC_IP "
-		"FROM "
-		"CITS.BASE_BAYONET "
-		"WHERE "
-		"CITS.BASE_BAYONET.BAYONETID = '%s'";
-
-	if (NULL == statement) return;
-	try {
-		sprintf(sql, tmpsql, bayid);
-		stmt->setSQL(sql);
-		rs = stmt->executeQuery();
-		while (rs->next()) {
-			strcpy(bayName, rs->getString(1).c_str()); 
-			strcpy(bayAddress, rs->getString(2).c_str());
-			strcpy(bayPicIP, rs->getString(3).c_str());
-		}
-		stmt->closeResultSet(rs);
-	}
-	catch (SQLException &ex) {
-		LOGERROR("[OCCI]statement=0x%p, sql=%s\n", statement, sql);
-		LOGERROR("[OCCI]%d:%s\n", ex.getErrorCode(), ex.getMessage().c_str());
-	}
+#if 1
+void OCCI_DoQueryResult(t_OcciResult *occiResult) {
+	printf("[result]%s-%s-%s\n", occiResult->m_first, occiResult->m_second, occiResult->m_three);
 }
 
-void PrintOcciResult(const t_OcciResult *occiResult) {
-	LOGINFO("\r\n[occiResult]%s %s %s %s %s "
-		"%s %s %s %s %s "
-		"%s %s %s %s %s "
-		"%s %s %s %s\n",
-		occiResult->m_unid, occiResult->m_areaid, occiResult->m_areaName, occiResult->m_deviceid, occiResult->m_deviceName,
-		occiResult->m_deviceIP, occiResult->m_bayid, occiResult->m_bayName, occiResult->m_bayAddress, occiResult->m_bayPicIP,
-		occiResult->m_dateTime, occiResult->m_plateType, occiResult->m_plateColor, occiResult->m_plateNo, occiResult->m_carSpeed, 
-		occiResult->m_carType, occiResult->m_carColor, occiResult->m_picPath, occiResult->m_roadNo);
-}
-
-#if 0
 int main(void) {
-	t_OcciResult occiResult;
-	void *statement = NULL;
-	statement = OCCI_CreateConnection("smjj", "smjj", "10.133.99.99:1521/orcl");
+	void *environment = NULL;
+	void *connPool = NULL;
+	void *connection1 = NULL, *connection2 = NULL, *connection3 = NULL;
+	void *statement1 = NULL, *statement2 = NULL, *statement3 = NULL;
+
+
+	environment = OCCI_InitEnvironment("UTF8", "UTF8");
+	//connPool = OCCI_CreateConnectionPool(environment, "scott", "tiger", "192.168.1.66:1521/orcl", 2);
+	//connection1 = OCCI_CreateConnectionByPool(connPool, "scott", "tiger");
+	//connection2 = OCCI_CreateConnectionByPool(connPool, "scott", "tiger");
+	connection1 = OCCI_CreateConnection(environment, "scott", "tiger", "192.168.1.66:1521/orcl");
+	connection2 = OCCI_CreateConnection(environment, "scott", "tiger", "192.168.1.66:1521/orcl");
 	//while (1) 
 	{
-		OCCI_QueryBaseArea(statement, "46EBCFD3B669CC237598767A5D32979C", occiResult.m_areaName);
-		OCCI_QueryBaseDevice(statement, "79553E24D1A1BF42E22BD8B933FA1A4A", occiResult.m_deviceName, occiResult.m_deviceIP);
-		//OCCI_QueryCarPass(statement, sql);
-	}
-	OCCI_DestroyConnection(statement);
+		statement1 = OCCI_CreateStatement(connection1);
+		statement2 = OCCI_CreateStatement(connection2);
 
+		while (1) {
+		int updateRet = OCCI_UpdateMultiSql(connection1, statement1);
+		printf("updateRet=%d\n", updateRet);
+		}
+
+		OCCI_QuerySql(statement1, OCCI_DoQueryResult);
+		printf("\n");
+		//OCCI_QuerySql(statement2, OCCI_DoQueryResult);
+		//printf("======================\n");
+
+		OCCI_DestroyStatement(connection2, statement2);
+		OCCI_DestroyStatement(connection1, statement1);
+	}
+	OCCI_DestroyConnection(environment, connection2);
+	OCCI_DestroyConnection(environment, connection1);
+	//OCCI_DestroyConnectionByPool(connPool, connection2);
+	//OCCI_DestroyConnectionByPool(connPool, connection1);
+	//OCCI_DestroyConnectionPool(environment, connPool);
+	OCCI_UninitEnvironment(environment);
+	
 	return 0;
 }
 #endif 
