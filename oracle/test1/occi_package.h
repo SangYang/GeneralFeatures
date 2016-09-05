@@ -30,6 +30,12 @@ extern "C" {
 };
 #endif // __cplusplus
 
+/*
+ * select * from nls_database_parameters // 服务器字符集环境
+ * select * from nls_instance_parameters // 客户端字符集环境
+ * select * from nls_session_parameters  // 会话字符集环境
+ */
+
 
 #endif // SSY_OCCI_PACKAGE_H
 
