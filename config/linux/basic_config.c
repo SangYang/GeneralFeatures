@@ -86,10 +86,14 @@ int GetPrivateProfileString(const char *appName, const char *keyName, const char
 					else {
 						valueStart++;
 						retLen--;
-						strncpy(retString, valueStart, retLen);
-						retString[retLen] = 0;
-						ReviseRetString(retString);
-						retLen = strlen(retString);
+						if (retSize > retLen) {
+							strncpy(retString, valueStart, retLen);
+							retString[retLen] = 0;
+							ReviseRetString(retString);
+							retLen = strlen(retString);							
+						}
+						else
+							retLen = -1;
 					}
 				}
 				else if (NULL != valueStart && NULL != valueEnd && 0 < (valueEnd-valueStart)) {
@@ -101,6 +105,8 @@ int GetPrivateProfileString(const char *appName, const char *keyName, const char
 						ReviseRetString(retString);
 						retLen = strlen(retString);
 					}
+					else
+						retLen = -1;
 				}
 			}
 		}

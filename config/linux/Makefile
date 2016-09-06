@@ -1,2 +1,2 @@
 all:
-	g++ -o config.bin *.cpp -g 
+	g++ -o config.bin *.cpp *.c -g 

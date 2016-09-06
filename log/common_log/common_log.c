@@ -314,38 +314,76 @@ static void Log_ModValue(char *item) {
 	}
 }
 
+static void Log_ReviseConfValue(char *retString) {
+	int index;
+	index = strspn(retString, " ");
+	if (0 < index)
+		memmove(retString, retString+index, strlen(retString+index)+1);
+	for (index = strlen(retString)-1; index >= 0; index--) {
+		if (' ' == retString[index])
+			retString[index] = 0;
+		else 
+			break;
+	}
+}
+
 static int Log_ParseConfig(const char *confbuff, char *value, int size, e_LogConfig elogconfig) {
-	char *find = NULL;
-	char *head = NULL;
-	char *tail = NULL;
+	char *appStart = NULL, *appEnd = NULL;
+	char *keyStart = NULL;
+	char *valueStart = NULL, *valueEnd = NULL;
 	char key[ITEM_MAX];
-	int keylen;
+	int retLen = -1;
 
 	switch (elogconfig) {
-		case LOGCONFIG_DIR: strcpy(key, "dir="); break;
-		case LOGCONFIG_SIZE: strcpy(key, "size="); break;
-		case LOGCONFIG_TIME: strcpy(key, "time="); break;
-		case LOGCONFIG_BFILE: strcpy(key, "bfile="); break;
-		case LOGCONFIG_BLINE: strcpy(key, "bline="); break;
-		case LOGCONFIG_BFUNC: strcpy(key, "bfunc="); break;
-		case LOGCONFIG_BPRINT: strcpy(key, "bprint="); break;
+		case LOGCONFIG_DIR: strcpy(key, "dir"); break;
+		case LOGCONFIG_SIZE: strcpy(key, "size"); break;
+		case LOGCONFIG_TIME: strcpy(key, "time"); break;
+		case LOGCONFIG_BFILE: strcpy(key, "bfile"); break;
+		case LOGCONFIG_BLINE: strcpy(key, "bline"); break;
+		case LOGCONFIG_BFUNC: strcpy(key, "bfunc"); break;
+		case LOGCONFIG_BPRINT: strcpy(key, "bprint"); break;
 		default: break;
 	}
-	keylen = strlen(key);
-	find = strstr(confbuff, "[log]");
-	if (NULL != find) {
-		head = strstr(find, key);
-		if (NULL != head) {
-			tail = strchr(head, '\n');
-			if (NULL != tail && (tail-head-keylen) < size) {
-				strncpy(value, head+keylen, tail-head-keylen);
-				value[tail-head-keylen] = 0;
-				Log_ModValue(value);
-				return 1;
+	appStart = strstr(confbuff, "[log]");
+	if (NULL != appStart) {
+		appEnd = strchr(appStart+1, '[');
+		keyStart = strstr(appStart, key);
+		if ((NULL != keyStart && NULL != appEnd && keyStart < appEnd) 
+			|| (NULL != keyStart && NULL == appEnd)) {
+			valueStart = strchr(keyStart, '=');
+			valueEnd = strpbrk(keyStart, "\r\n");
+			if (NULL != valueStart && NULL == valueEnd) {
+				retLen = strcspn(valueStart, "\r\n");
+				if (1 == retLen) 
+					strcpy(value, "");
+				else {
+					valueStart++;
+					retLen--;
+					if (size > retLen) {
+						strncpy(value, valueStart, retLen);
+						value[retLen] = 0;
+						Log_ReviseConfValue(value);
+						retLen = strlen(value);
+					}
+					else
+						retLen = -1;
+				}
+			}
+			else if (NULL != valueStart && NULL != valueEnd && valueStart < valueEnd) {
+				valueStart++;
+				retLen = valueEnd - valueStart;
+				if (size > retLen) {
+					strncpy(value, valueStart, retLen);
+					value[retLen] = 0;
+					Log_ReviseConfValue(value);
+					retLen = strlen(value);
+				}
+				else
+					retLen = -1;
 			}
 		}
 	}
-	return -1;
+	return retLen;
 }
 
 int Log_Init(const char *confpath) {
@@ -391,7 +429,7 @@ int Log_Init(const char *confpath) {
 	return result;
 }
 
-#if 1
+#if 0
 int main(void) {
 	char name[NAME_MAX];
 	char time[TIME_MAX];
