@@ -6,8 +6,8 @@ Option Explicit
 
 Dim strExePathSet
 strExePathSet = Array( _
-	"C:\Documents and Settings\Administrator\Desktop\vbs\1a\vbs1.exe", _
-	"C:\Documents and Settings\Administrator\Desktop\vbs\2 b\vbs 2.exe")
+	"1a\vbs1.exe", _
+	"2 b\vbs 2.exe")
 
 Dim vtNowDate
 vtNowDate = Now()
@@ -53,25 +53,42 @@ Function GetFileName(strPath)
 	GetFileName = arrPath(ubound(arrPath))
 End Function	
 
+Function GetFileDir(strPath)
+	Dim strSubPath
+	strSubPath = InstrRev(strPath, "\")
+	GetFileDir = Left(strPath, strSubPath)
+End Function
+
 Class Process
 	Private objWshShell
 	Private objWMIService
 	Private objDatetime
+	Private objFileSys
 
 	Private Sub Class_Initialize 
 		Set objWshShell = WScript.CreateObject("WScript.Shell")
 		Set objWMIService = GetObject("winmgmts:\\.\root\cimv2")
-		Set objDatetime = CreateObject("WbemScripting.SWbemDateTime")		
+		Set objDatetime = CreateObject("WbemScripting.SWbemDateTime")	
+		Set objFileSys = CreateObject("Scripting.FileSystemObject")		
 	End Sub 
 	
 	Private Sub Class_Terminate()
 		Set objWshShell = Nothing
 		Set objWMIService = Nothing
 		Set objDatetime = Nothing
+		Set objFileSys = Nothing
 	End Sub	
 	
 	Public Sub Start(strPath)
-		objWshShell.Run Chr(34) & strPath & Chr(34),1,FALSE      
+		Dim strCurrentDir, strDir, strName, strNewPath
+		strCurrentDir = objWshShell.CurrentDirectory
+		strDir = GetFileDir(strPath)
+		objWshShell.CurrentDirectory = strDir	
+		
+		strName = GetFileName(strPath)
+		strNewPath = objFileSys.GetFolder(".").Path	+ "\" + strName	
+		objWshShell.Run Chr(34) & strNewPath & Chr(34),1,FALSE    
+		objWshShell.CurrentDirectory = strCurrentDir
 	End Sub
 
 	Public Sub [Stop](strName)

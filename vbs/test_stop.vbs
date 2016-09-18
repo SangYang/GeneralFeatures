@@ -5,7 +5,7 @@
 Option Explicit 
 
 Dim strFilePath, strExeNameSet
-strFilePath = "C:\Documents and Settings\Administrator\Desktop\vbs\2_exe_start.vbs"
+strFilePath = "test_start.vbs"
 strExeNameSet = Array( _
 	"vbs1.exe", _
 	"vbs 2.exe")
